@@ -3,6 +3,7 @@
 from lib.ldap import init_ldap_session
 from lib.logger import logger, printlog
 from lib.attacks.find import SCCMHUNTER
+import lib.scripts.pxethiefy as pxethiefy
 from impacket.smbconnection import SMBConnection
 import ntpath
 import os
@@ -154,6 +155,7 @@ class SMB:
                             try:
                                 conn.getFile(shareName="REMINST",pathName = path, callback=fh.write)
                                 downloaded.append(file_name)
+                                pxethiefy.loot_ip_address(target)
                             except Exception as e:
                                 print(e)
                                 print("shit broke")
