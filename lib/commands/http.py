@@ -4,7 +4,7 @@ from lib.logger import init_logger
 
 app = typer.Typer()
 COMMAND_NAME = 'http'
-HELP = 'Abuse client enrollment.'
+HELP = 'Abuse client enrollment and interact with management points'
 
 @app.callback(no_args_is_help=True, invoke_without_command=True)
 
@@ -21,12 +21,13 @@ def main(
     debug           : bool  = typer.Option(False, '-debug',help='Enable Verbose Logging'),
     auto            : bool  = typer.Option(False, '-auto', help='Attempt to create a machine and recover policies with provided credentials.'),
     computer_pass   : str   = typer.Option(None, '-cp', help='Machine account password'),
-    computer_name   : str   = typer.Option(None, '-cn', help='Machine account name.')):
+    computer_name   : str   = typer.Option(None, '-cn', help='Machine account name'),
+    certificate     : str   = typer.Option(None, '-cert', help='Client authentication certificate')):
 
     logs_dir = init_logger(debug)
     httphunter = HTTP(username=username, password=password, domain=domain, dc_ip=dc_ip,ldaps=ldaps,
                             kerberos=kerberos, no_pass=no_pass, hashes=hashes, aes=aes, debug=debug, auto=auto,
-                            computer_pass=computer_pass, computer_name=computer_name, logs_dir=logs_dir)
+                            computer_pass=computer_pass, computer_name=computer_name, certificate=certificate, logs_dir=logs_dir)
     httphunter.run()
 
 

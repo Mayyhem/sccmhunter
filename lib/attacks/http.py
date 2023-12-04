@@ -4,6 +4,7 @@ from lib.attacks.find import SCCMHUNTER
 from lib.scripts.addcomputer import AddComputerSAMR
 from lib.scripts.sccmwtf import SCCMTools
 from lib.scripts.banner import show_banner
+import lib.scripts.pxethiefy as pxethiefy
 import requests
 import getpass
 import random
@@ -13,13 +14,12 @@ import sys
 import os
 
 
-
 class HTTP:
     
     def __init__(self, username=None, password=None, domain=None, target_dom=None, 
                     dc_ip=None,ldaps=False, kerberos=False, no_pass=False, hashes=None, 
-                    aes=None, debug=False, auto=False, computer_pass=None, computer_name=None,
-                    logs_dir=None):
+                    aes=None, debug=False, auto=False, computer_pass=None, computer_name=None, 
+                    certificate=None, logs_dir=None):
         self.username = username
         self.password = password
         self.domain = domain
@@ -36,6 +36,7 @@ class HTTP:
         self.auto = auto
         self.computer_name = computer_name
         self.computer_pass = computer_pass
+        self.certificate = certificate
         self.targets = []
         self.logs_dir = logs_dir
 
@@ -75,8 +76,8 @@ class HTTP:
             else:
                 logger.info(f'[-] Could not validate successful creation.')
         
-        if not (self.computer_name or self.computer_pass):
-            logger.info("[-] Missing machine account credentials, check your arguments and try again.")
+        if not ((self.computer_name or self.computer_pass) or self.certificate):
+            logger.info("[-] Missing machine account credentials or client authentication certificate, check your arguments and try again.")
             sys.exit()
 
         for target in self.targets:
@@ -86,6 +87,13 @@ class HTTP:
                 logger.info(f"[*] Atempting to grab policy from {target}")
                 SCCMWTF=SCCMTools(target_name, target_fqdn, target, self.computer_name, self.computer_pass, self.logs_dir)
                 SCCMWTF.sccmwtf_run()
+            except Exception as e:
+                print(e)
+
+            try:
+                if (self.certificate):
+                    # do stuff
+                    PXETHIEFY=pxethiefy.loot_ip_address(target_fqdn)
             except Exception as e:
                 print(e)
 
