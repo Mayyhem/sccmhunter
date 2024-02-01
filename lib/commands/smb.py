@@ -13,6 +13,7 @@ def main(
     password        : str   = typer.Option(None, '-p',  help="Password"),
     domain          : str   = typer.Option(..., '-d',  help="Target domain"),
     dc_ip           : str   = typer.Option(..., '-dc-ip',  help = "IP address or FQDN of domain controller"),
+    target          : str   = typer.Option(None, '-t',  help = "IP address or FQDN of the specific target to enumerate"),
     ldaps           : bool  = typer.Option(False, '-ldaps', help='Use LDAPS instead of LDAP'),
     kerberos        : bool  = typer.Option(False, "-k", help='Use Kerberos authentication'),
     no_pass         : bool  = typer.Option(False, "-no-pass", help="don't ask for password (useful for -k)"),
@@ -22,7 +23,7 @@ def main(
     save            : bool  =  typer.Option(False, '-save', help='Save PXEBoot variables files if found.')):
 
     logs_dir = init_logger(debug)
-    smbhunter = SMB(username=username, password=password, domain=domain, dc_ip=dc_ip,ldaps=ldaps,
+    smbhunter = SMB(username=username, password=password, domain=domain, dc_ip=dc_ip,target=target,ldaps=ldaps,
                             kerberos=kerberos, no_pass=no_pass, hashes=hashes, aes=aes, debug=debug,
                              save=save, logs_dir=logs_dir)
     smbhunter.run()

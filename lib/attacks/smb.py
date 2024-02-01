@@ -17,7 +17,7 @@ import socket
 
 class SMB:
     
-    def __init__(self, username=None, password=None, domain=None, target_dom=None, 
+    def __init__(self, username=None, password=None, domain=None, target_dom=None,target=None, 
                     dc_ip=None,ldaps=False, kerberos=False, no_pass=False, hashes=None, 
                     aes=None, debug=False, save=False,
                     logs_dir=None):
@@ -25,6 +25,7 @@ class SMB:
         self.password = password
         self.domain = domain
         self.target_dom = target_dom
+        self.target = target
         self.dc_ip = dc_ip
         self.ldaps = ldaps
         self.kerberos = kerberos
@@ -44,19 +45,23 @@ class SMB:
 
  
     def run(self):
-        logfile = f"{self.logs_dir}/sccmhunter.log"
-        if os.path.exists(logfile):
-            logger.info("[+] Found targets from logfile.")
-            targets = self.read_logs()
+        if self.target:
+            targets = [self.target.strip()]
             self.smb_hunter(targets)
         else:
-            logger.info("[-] Existing log file not found, searching LDAP for site servers.")
-            sccmhunter = SCCMHUNTER(username=self.username, password=self.password, domain=self.domain, 
-                                    target_dom=self.target_dom, dc_ip=self.dc_ip,ldaps=self.ldaps,
-                                    kerberos=self.kerberos, no_pass=self.no_pass, hashes=self.hashes, 
-                                    aes=self.aes, debug=self.debug, logs_dir=self.logs_dir)
-            sccmhunter.run()
-            self.run()
+            logfile = f"{self.logs_dir}/sccmhunter.log"
+            if os.path.exists(logfile):
+                logger.info("[+] Found targets from logfile.")
+                targets = self.read_logs()
+                self.smb_hunter(targets)
+            else:
+                logger.info("[-] Existing log file not found, searching LDAP for site servers.")
+                sccmhunter = SCCMHUNTER(username=self.username, password=self.password, domain=self.domain, 
+                                        target_dom=self.target_dom, target=self.target, dc_ip=self.dc_ip,ldaps=self.ldaps,
+                                        kerberos=self.kerberos, no_pass=self.no_pass, hashes=self.hashes, 
+                                        aes=self.aes, debug=self.debug, logs_dir=self.logs_dir)
+                sccmhunter.run()
+                self.run()
 
     def read_logs(self):
         targets = []
