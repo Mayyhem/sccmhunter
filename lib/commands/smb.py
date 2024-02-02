@@ -20,12 +20,14 @@ def main(
     hashes          : str   = typer.Option(None, "-hashes",metavar="LMHASH:NTHASH", help="LM and NT hashes, format is LMHASH:NTHASH"),
     aes             : str   = typer.Option(None, '-aes', metavar="HEX KEY", help='AES key to use for Kerberos Authentication (128 or 256 bits)'), 
     debug           : bool  = typer.Option(False, '-debug',help='Enable Verbose Logging'),
-    save            : bool  =  typer.Option(False, '-save', help='Save PXEBoot variables files if found.')):
+    save            : bool  =  typer.Option(False, '-save', help='Save PXEBoot variables files if found.'),
+    force_pxe       : bool  =  typer.Option(False, '-force-pxe', help='Check for PXEBoot vars via DHCP/TFTP on any discovered DP (requires root)')):
+
 
     logs_dir = init_logger(debug)
     smbhunter = SMB(username=username, password=password, domain=domain, dc_ip=dc_ip,target=target,ldaps=ldaps,
                             kerberos=kerberos, no_pass=no_pass, hashes=hashes, aes=aes, debug=debug,
-                             save=save, logs_dir=logs_dir)
+                             save=save, logs_dir=logs_dir, force_pxe=force_pxe)
     smbhunter.run()
 
 
